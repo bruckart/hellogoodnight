@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+
+    <title>Hello, Goodnight</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=default"></script>
+    <style type="text/css">
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map 
+      {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html,
+      body
+      {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      .custom-map-control-button-top-right
+      {
+        appearance: button;
+        cursor: pointer;
+        /* background-color: #ffffff;
+        border: 1px solid #ff0000; */
+        border-radius: 2px;
+        box-shadow: 0 1px 4px -1px rgba(0, 0, 0, 0.3);
+        margin: 10px 10px 0px 0px;
+        padding: 2px;
+        height: 30px;
+        font: 400 14px Roboto, Arial, sans-serif;
+        overflow: hidden;
+      }
+      .custom-map-control-button-top-right:hover
+      {
+        appearance: button;
+        cursor: pointer;
+        border-radius: 2px;
+        box-shadow: 0 1px 4px -1px rgba(0, 0, 0, 0.3);
+        font: 400 14px Roboto, Arial, sans-serif;
+        background: #ffebeb;
+      }
+
+      .custom-map-control-button-top-left
+      {
+        appearance: button;
+        /* background-color: #ffffff;
+        border: 1px solid #00ff00; */
+        border-radius: 2px;
+        box-shadow: 0 1px 4px -1px rgba(0, 0, 0, 0.3);
+        cursor: pointer;
+        margin: 0px 0px 0px 10px;
+        padding: 2px 2px 0px 2px;
+        height: 30px;
+        font: 400 14px Roboto, Arial, sans-serif;
+        overflow: hidden;
+      }
+      .custom-map-control-button-top-left:hover
+      {
+        appearance: button;
+        cursor: pointer;
+        border-radius: 2px;
+        box-shadow: 0 1px 4px -1px rgba(0, 0, 0, 0.3);
+        font: 400 14px Roboto, Arial, sans-serif;
+        background: #ffebeb;
+      }
+
+      .custom-map-control-label
+      {
+        appearance: button;
+        border-radius: 2px;
+        box-shadow: 0 1px 4px -1px rgba(0, 0, 0, 0.3);
+        cursor: pointer;
+        background: #ffebeb;
+      }
+      div#time
+      {
+        /* background-color: #ff0000; */
+
+        color: #efefef;
+        margin: 0px 0px 5px 5px;
+        font-size: 14px;
+        background-color: transparent;
+      }
+    </style>
+    <script>
+      // Global 
+      var mapDate = new Date();
+      var options = {  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
+
+      // This example adds hide() and show() methods to a custom overlay's prototype.
+      // These methods toggle the visibility of the container <div>.
+      // overlay to or from the map.
+      function initMap()
+      {
+
+        const basemap = new google.maps.Map(document.getElementById("map"), 
+        {
+          minZoom: 2,
+          maxZoom: 15,
+          zoom: 2,
+          center: { lat: 0, lng: 0 },
+          mapTypeId: google.maps.MapTypeId.HYBRID,
+          disableDefaultUI: false,
+          zoomControl: true,
+          gestureHandling: 'none',
+          streetViewControl: false,
+        });
+
+        class TerminatorOverlay extends google.maps.OverlayView
+        {
+          constructor()
+          {
+            super();
+            this.canvas_ = null;
+
+            this.NORTH_ = new google.maps.LatLng(85, 0);
+            this.SOUTH_ = new google.maps.LatLng(-85, 0);
+          }
+
+          updateHtml()
+          {
+            var options = {  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
+            document.getElementById('time').innerHTML = mapDate.toLocaleTimeString('en-us', options);
+          }
+
+          onAdd()
+          {
+            this.canvas_ = document.createElement('canvas');
+            this.canvas_.style.position = 'absolute';
+
+            this.getPanes().overlayLayer.appendChild(this.canvas_);
+          }
+
+          onRemove()
+          {
+            this.canvas_.parentNode.removeChild(this.canvas_);
+            this.canvas_ = null;
+          }
+
+          draw()
+          {
+            var projection = this.getProjection();
+            var worldDim   = this.getWorldDimensions_(projection);
+            var visibleDim = this.getVisibleDimensions_(projection, 250);
+
+            // The viewport dimensions seem to be a bit buggy on small zoom levels.
+            // Therefore we adjust the viewport to the world's dimensions, extended by
+            // half a world width on the left and right
+            if (this.getMap().getZoom() < 3)
+            {
+              //visibleDim = worldDim;
+              visibleDim.x = worldDim.x - worldDim.width;
+              visibleDim.y = worldDim.y;
+              visibleDim.width = worldDim.width * 3;
+              visibleDim.height = worldDim.height;
+            }
+
+            // Resize canvas to current viewport
+            this.canvas_.style.left = visibleDim.x + 'px';
+            this.canvas_.style.top = visibleDim.y + 'px';
+            this.canvas_.style.width = visibleDim.width + 'px';
+            this.canvas_.style.height = visibleDim.height + 'px';
+            // Important: resize not only CSS dimensions, but also canvas dimensions
+            this.canvas_.width = visibleDim.width;
+            this.canvas_.height = visibleDim.height;
+
+            // Clear the current canvas
+            var ctx = this.canvas_.getContext('2d');
+            ctx.clearRect(0, 0, visibleDim.width, visibleDim.height);
+
+            // Redraw the wave which approximately describes where it's currently night
+            var terminator = this.createTerminatorFunc_(visibleDim, worldDim);
+            var northernSun = this.isNorthernSun_(this.date_ ? this.date_ : new Date());
+
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.beginPath();
+            ctx.moveTo(0, northernSun ? visibleDim.height : 0);
+            for (var x = 0; x < visibleDim.width; x++)
+            {
+              ctx.lineTo(x, terminator(x));
+            }
+            ctx.lineTo(visibleDim.width, northernSun ? visibleDim.height : 0);
+            ctx.fill();
+          }
+
+          getWorldDimensions_(projection)
+          {
+            var north = projection.fromLatLngToDivPixel(this.NORTH_);
+            var south = projection.fromLatLngToDivPixel(this.SOUTH_);
+            var width = projection.getWorldWidth();
+
+            return {
+              x: north.x - width / 2,
+              y: north.y,
+              width: width,
+              height: south.y - north.y
+            };
+          }
+
+          getVisibleDimensions_(projection, margin)
+          {
+            var ne = projection.fromLatLngToDivPixel(
+                this.getMap().getBounds().getNorthEast()
+                );
+            var sw = projection.fromLatLngToDivPixel(
+                this.getMap().getBounds().getSouthWest()
+                );
+
+            return {
+              x: sw.x - margin,
+              y: ne.y - margin,
+              width: ne.x - sw.x + 2 * margin,
+              height: sw.y - ne.y + 2 * margin
+            };
+          }
+
+          setDate(date)
+          {
+            this.date_ = date;
+
+            // Redraw the line if we're added to a maps canvas
+            if (this.canvas_ !== null)
+            {
+              this.draw();
+            }
+          }
+
+          isNorthernSun_(date)
+          {
+            var vernalEq = new Date(Date.UTC(date.getFullYear(), 2, 19));
+            var autumnalEq = new Date(Date.UTC(date.getFullYear(), 8, 18));
+
+            return (date.getTime() > vernalEq.getTime()) &&
+                (date.getTime() <= autumnalEq.getTime());
+          }
+
+          getDayOfYear_(date)
+          {
+            var firstDay = new Date(Date.UTC(date.getFullYear(), 0, 1));
+            return Math.ceil((date.getTime() - firstDay.getTime()) / 86400000);
+          }
+
+          createTerminatorFunc_(viewport, world)
+          {
+            var date = this.date_ ? this.date_ : new Date();
+
+            // Precalculate some constants to make the actual terminator function faster
+
+            var TWO_PI = 2 * Math.PI;
+
+            var WORLD_WIDTH = world.width;
+            var WORLD_HEIGHT = world.height;
+            var HALF_WORLD_HEIGHT = world.height / 2;
+
+            var VISIBLE_WIDTH = viewport.width;
+            var VISIBLE_HEIGHT = viewport.height;
+
+            var WORLD_OFFSET_X = viewport.x - world.x;
+            var WORLD_OFFSET_Y = viewport.y - world.y;
+
+
+            // Scaling factors
+
+            // Used for scaling the x-coordinate in the scope of the world with
+            // onto the range of [0, 2*PI)
+            var X_SCALE = TWO_PI / WORLD_WIDTH;
+
+            // Used for scaling the output of the crazy function below ([-PI/2, PI/2]) to
+            // the range of the world's height ([-world.height/2, world.height/2])
+            var Y_SCALE = WORLD_HEIGHT / Math.PI;
+
+
+            // Offset calculation
+
+            // The current (or specified) UTC time in seconds.
+            var TIME_SECS = date.getUTCHours() * 3600 +
+                date.getUTCMinutes() * 60 +
+                date.getUTCSeconds();
+
+            // Since the world's borders are at longitude +-180 degrees but we are
+            // are comparing to UTC time (which takes place at longitude 0 degrees),
+            // we have to shift the time by exactly 12 hours using NOON_SECS.
+            var NOON_SECS = 86400 / 2;
+
+            // We calculate the horizontal offset on the basis of seconds. Therefore we
+            // divide the maximum offset (2 * PI) by the amount of seconds in a day.
+            var PI_STEP = TWO_PI / 86400;
+
+            // Now let's add everything together... the offset is now in the
+            // range of [0, 2*PI)
+            var TIME_OFFSET_X = (TIME_SECS + NOON_SECS) * PI_STEP;
+
+            // And now the vertical offset... throughout the year, the sun's position
+            // varies between +-23.44 degrees around the equatorial line (it's exactly
+            // over the equator on the vernal and autumnal equinox, 23.44° north at the
+            // summer solstice and 23.44° south at the winter solstice). Between those
+            // dates, the sun moves on a sine wave.
+
+            // The first thing we do is calculating the sun's position by using the
+            // vernal equinox as a reference point.
+            var DAY_OF_YEAR = this.getDayOfYear_(date);
+            var VERNAL_EQUINOX = this.getDayOfYear_(
+                new Date(Date.UTC(date.getFullYear(), 2, 20))
+                );
+
+            var MAX_DECLINATION = 23.44 * Math.PI / 90;
+            var DECLINATION = Math.sin(TWO_PI * (DAY_OF_YEAR - VERNAL_EQUINOX) / 365) *
+                MAX_DECLINATION;
+
+            // The returned method first translates the viewport x to world x,
+            // calculates the world y and translates it back to the viewport y
+            return function(x)
+            {
+              // x in range [0, visible_width]
+
+              // World x in the range [0, 2PI) ("longitude")
+              var worldX = (x + WORLD_OFFSET_X) * X_SCALE + TIME_OFFSET_X;
+
+              // World y in the range [-PI/2, PI/2] ("latitude")
+              // This is the main function for calculating the terminator line!!
+              var worldY = Math.atan(-Math.cos(worldX) / Math.tan(DECLINATION));
+
+              // Translate to range [0, world_height]
+              worldY = HALF_WORLD_HEIGHT + worldY * Y_SCALE;
+
+              // Crop to visible range
+              return Math.min(VISIBLE_HEIGHT, Math.max(0, worldY - WORLD_OFFSET_Y));
+            };
+          }
+
+          now()
+          {
+            var d = new Date();
+            mapDate.setTime(d);
+            this.setDate(mapDate);
+
+            this.updateHtml();
+          }
+
+          advanceHour()
+          {
+            // Advance the current time by 1 hour.
+            mapDate.setTime(mapDate.getTime() + (1*60*60*1000));
+            this.setDate(mapDate);
+
+            this.updateHtml();
+          }
+
+          advanceMonth()
+          {
+            mapDate.setMonth(mapDate.getMonth()+1)
+            this.setDate(mapDate);
+
+            this.updateHtml();
+          }
+
+
+        } // TerminatorOverlay
+
+        const overlay = new TerminatorOverlay();
+        overlay.setMap(basemap);
+
+
+        var d1 = mapDate; // new Date(2021, 0, 1)
+        var d2 = new Date(2021, 11, 31);
+        function simulate(from, to, time)
+        {
+          if (d1 <= d2)
+          {
+            d1.setTime(d1.getTime() + 86400000);
+            mapDate.setTime(d1);   
+            overlay.setDate(mapDate);
+
+            overlay.updateHtml();
+
+            setTimeout(function() { simulate(d1, d2, 20); }, 20);
+          }
+        }
+
+        const nowButton = document.createElement("button");
+        nowButton.textContent = "Now";
+        nowButton.classList.add("custom-map-control-button-top-right");
+
+        nowButton.addEventListener("click", () => {
+          overlay.now();
+        });
+
+        basemap.controls[google.maps.ControlPosition.TOP_RIGHT].push(
+          nowButton);
+
+
+        const advHrButton = document.createElement("button");
+        advHrButton.textContent = "Advance Hour";
+        advHrButton.classList.add("custom-map-control-button-top-right");
+
+        advHrButton.addEventListener("click", () => {
+          overlay.advanceHour();
+        });
+
+        basemap.controls[google.maps.ControlPosition.TOP_RIGHT].push(
+          advHrButton);
+
+        const advMonthButton = document.createElement("button");
+        advMonthButton.textContent = "Advance Month";
+        advMonthButton.classList.add("custom-map-control-button-top-right");
+
+        advMonthButton.addEventListener("click", () => {
+          overlay.advanceMonth();
+        });
+
+        basemap.controls[google.maps.ControlPosition.TOP_RIGHT].push(
+          advMonthButton);
+
+        const simulateButton = document.createElement("button");
+        simulateButton.textContent = "Simulate 2021";
+        simulateButton.classList.add("custom-map-control-button-top-left");
+
+        simulateButton.addEventListener("click", () =>
+        {
+          simulate();
+          // reset the date
+          // d1 = mapDate;
+        });
+
+        basemap.controls[google.maps.ControlPosition.LEFT_TOP].push(
+          simulateButton);
+
+        const label = document.createElement("div");
+
+        label.textContent = mapDate.toLocaleTimeString('en-us', options);
+        label.setAttribute("id", "time");
+        label.classList.add("custom-map-control-label");
+
+        basemap.controls[google.maps.ControlPosition.BOTTOM_LEFT].push(
+          label);
+
+      } // initMap
+
+    </script>
+
+  </head>
+    <div id="map" style="width: 1000px; height: 400px;"></div>
+    <!-- Async script executes immediately and must be after any DOM elements used in callback. -->
+    <script
+      src="https://maps.googleapis.com/maps/api/js?key=API_KEY&callback=initMap&libraries=&v=weekly"
+      async
+    >
+    </script>
+  </body>
+</html>
